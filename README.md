@@ -200,3 +200,8 @@ compatible with version 3.
 - [`COPYING`](COPYING): the GPL version 3, which the LGPL supplements.
 - [`NOTICE`](NOTICE): the TPP files PTMProphet-rs derives from, their copyright holders and the
   upstream license notice. Each source file's header names its own upstream files and holders.
+
+Release zips also carry `THIRD-PARTY-LICENSES.txt`, the licenses of the Rust crates compiled into
+the program, and `licenses/Rust-standard-library.html`, the licenses of the Rust standard library.
+The build writes `THIRD-PARTY-LICENSES.txt` with cargo-about from [`about.toml`](about.toml) and
+[`about.hbs`](about.hbs).

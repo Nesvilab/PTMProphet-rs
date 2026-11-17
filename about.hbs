@@ -1,0 +1,27 @@
+Third-party licenses
+====================
+
+The Rust crates the ptmprophet-rs release builds are made from (a few listed
+crates are not linked into either), grouped by license, including the C code
+and data those crates compile in. The Rust standard library is listed in
+licenses/Rust-standard-library.html. PTMProphet-rs's own license is in
+COPYING.LESSER and COPYING, and NOTICE lists the TPP files it derives from.
+{{#each licenses}}
+
+--------------------------------------------------------------------------------
+{{{name}}}
+
+Used by:
+{{#each used_by}}
+  {{{crate.name}}} {{{crate.version}}}
+{{/each}}
+{{#unless source_path}}
+{{#if (or (eq id "MIT") (eq id "BSD-2-Clause") (eq id "BSD-3-Clause") (eq id "ISC") (eq id "Zlib"))}}
+{{#each used_by}}
+MISSING: no license file found for {{{crate.name}}} {{{crate.version}}}, so this standard text lacks its copyright line.
+{{/each}}
+{{/if}}
+{{/unless}}
+
+{{{text}}}
+{{/each}}

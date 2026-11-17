@@ -1,0 +1,153 @@
+# cargo-about: FragPipe-tools' build-ptmprophet-rs.yml renders about.hbs into
+# THIRD-PARTY-LICENSES.txt for each release zip. cargo-about fails if a
+# crate's license expression cannot be met from `accepted`, which lists only
+# the licenses this dependency tree needs, in order of preference. The build
+# also fails on any cargo-about warning. That is how it reports a
+# clarification below whose checksum no longer matches the crate's file, and
+# one whose key names no crate in the graph (misspelled or stale).
+accepted = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-3-Clause",
+]
+# Every release build's target (the `dir` of each matrix row in
+# build-ptmprophet-rs.yml), so that one file covers both zips and every crate
+# clarified below is in the graph. The build stops when the target it builds
+# is missing here.
+targets = ["x86_64-pc-windows-msvc", "x86_64-unknown-linux-gnu"]
+ignore-build-dependencies = true
+ignore-dev-dependencies = true
+# Skips crates with `publish = false`, which is ptmprophet-rs itself: its own
+# license is in COPYING.LESSER and COPYING, not in THIRD-PARTY-LICENSES.txt.
+private = { ignore = true }
+
+# Used only by proc-macro2 and syn, inside derive macros at compile time; none
+# of it is linked into the binary.
+[unicode-ident]
+accepted = ["Unicode-3.0"]
+
+# The clarifications point cargo-about at license files it does not find or
+# recognize on its own (it would write a placeholder MIT text with no copyright
+# line instead), and add the licenses of C code and data that crates build into
+# the binary. Each checksum is the SHA-256 of the file; `cargo about clarify`
+# computes it.
+
+[chrono.clarify]
+license = "MIT OR Apache-2.0"
+[[chrono.clarify.files]]
+path = "LICENSE.txt"
+checksum = "946c9835d8034d24404f8cfec5f4654cee5dad17e944afc3d06d742cf2882831"
+
+[md5.clarify]
+license = "MIT OR Apache-2.0"
+[[md5.clarify.files]]
+path = "LICENSE.md"
+checksum = "c9759868ce3cef7bf419e389a0bc4408d48d0880fee20cdf640bcb027aca4bb6"
+
+# The windows-* crates share one MIT file. windows-core, -implement,
+# -interface, -result and -strings are in neither build: iana-time-zone pulls
+# them in on Windows, but is itself only used on Linux, and one graph over both
+# targets keeps both edges.
+[windows-core.clarify]
+license = "MIT"
+[[windows-core.clarify.files]]
+path = "license-mit"
+checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+
+[windows-implement.clarify]
+license = "MIT"
+[[windows-implement.clarify.files]]
+path = "license-mit"
+checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+
+[windows-interface.clarify]
+license = "MIT"
+[[windows-interface.clarify.files]]
+path = "license-mit"
+checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+
+[windows-link.clarify]
+license = "MIT"
+[[windows-link.clarify.files]]
+path = "license-mit"
+checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+
+[windows-result.clarify]
+license = "MIT"
+[[windows-result.clarify.files]]
+path = "license-mit"
+checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+
+[windows-strings.clarify]
+license = "MIT"
+[[windows-strings.clarify.files]]
+path = "license-mit"
+checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+
+[windows-sys.clarify]
+license = "MIT"
+[[windows-sys.clarify.files]]
+path = "license-mit"
+checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+
+# The simd crates ship no license text of their own; it is read from the
+# crate's commit in its repository.
+[base64-simd.clarify]
+license = "MIT"
+[[base64-simd.clarify.git]]
+path = "LICENSE"
+checksum = "71674605ec4c087fe9eb534e3e4f9e26eb2e4aabcd76a29fd156c6a844d44b3d"
+
+[vsimd.clarify]
+license = "MIT"
+[[vsimd.clarify.git]]
+path = "LICENSE"
+checksum = "71674605ec4c087fe9eb534e3e4f9e26eb2e4aabcd76a29fd156c6a844d44b3d"
+
+# Without this, a source file whose header carries the WHATWG license is
+# reproduced as a license text.
+[encoding_rs.clarify]
+license = "(Apache-2.0 OR MIT) AND BSD-3-Clause"
+[[encoding_rs.clarify.files]]
+path = "LICENSE-MIT"
+license = "MIT"
+checksum = "3fa4ca83dcc9237839b1bdeb2e6d16bdfb5ec0c5ce42b24694d8bbf0dcbef72c"
+[[encoding_rs.clarify.files]]
+path = "LICENSE-APACHE"
+license = "Apache-2.0"
+checksum = "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+[[encoding_rs.clarify.files]]
+path = "LICENSE-WHATWG"
+license = "BSD-3-Clause"
+checksum = "838118388fe5c2e7f1dbbaeed13e1c7f3ebf88be91319c7c1d77c18e987d1a50"
+
+# The Unicode data tables compiled into the binary: regex turns on the
+# `unicode` feature of regex-syntax. Unicode-DFS-2016 is the earlier form of
+# Unicode-3.0, with the same permissive terms.
+[regex-syntax]
+accepted = ["Unicode-DFS-2016"]
+[regex-syntax.clarify]
+license = "(MIT OR Apache-2.0) AND Unicode-DFS-2016"
+[[regex-syntax.clarify.files]]
+path = "LICENSE-MIT"
+license = "MIT"
+checksum = "6485b8ed310d3f0340bf1ad1f47645069ce4069dcc6bb46c7d5c6faf41de1fdb"
+[[regex-syntax.clarify.files]]
+path = "LICENSE-APACHE"
+license = "Apache-2.0"
+checksum = "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2"
+[[regex-syntax.clarify.files]]
+path = "src/unicode_tables/LICENSE-UNICODE"
+license = "Unicode-DFS-2016"
+checksum = "74db5baf44a41b1000312c673544b3374e4198af5605c7f9080a402cec42cfa3"
+
+# mimalloc, built from source: libmimalloc-sys compiles its v3 sources unless
+# its `v2` feature is on.
+[libmimalloc-sys.clarify]
+license = "MIT"
+[[libmimalloc-sys.clarify.files]]
+path = "LICENSE.txt"
+checksum = "a08554fab028af3af047e8588d32d019662c1b1bf07959a195a2f75fe340726b"
+[[libmimalloc-sys.clarify.files]]
+path = "c_src/mimalloc/v3/LICENSE"
+checksum = "82ade5d7d9b029044b5fbbc326207fc47c2d44ee4dd71e8a559c36d728217de9"

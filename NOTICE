@@ -108,6 +108,10 @@ text of the GNU Lesser General Public License version 3 is in COPYING.LESSER,
 and the text of the GNU General Public License version 3, which it
 supplements, is in COPYING.
 
+Release zips also carry THIRD-PARTY-LICENSES.txt, the licenses of the Rust
+crates compiled into PTMProphet-rs, and licenses/Rust-standard-library.html,
+the licenses of the Rust standard library, which the binary statically links.
+
 
 Changes
 -------
