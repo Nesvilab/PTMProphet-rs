@@ -9,13 +9,18 @@ repo root carry the terms and the upstream attribution.
 **Dependencies.** Every direct *and* transitive dependency must be compatible with LGPL-3.0/GPL-3.0:
 
 - **Allowed:** `MIT`, `Apache-2.0`, `BSD-2-Clause`, `BSD-3-Clause`, `ISC`, `Zlib`, `MPL-2.0`,
-  `Unicode-3.0`, `Unlicense`, `CC0-1.0`, `0BSD`, and LGPL/GPL version 3 or any "or later" version
-  that reaches 3 (`LGPL-3.0-*`, `GPL-3.0-*`, `LGPL-2.1-or-later`, `GPL-2.0-or-later`). A dual
-  license qualifies when one of its options is allowed.
+  `Unicode-3.0`, `Unicode-DFS-2016`, `Unlicense`, `CC0-1.0`, `0BSD`, and LGPL/GPL version 3 or any
+  "or later" version that reaches 3 (`LGPL-3.0-*`, `GPL-3.0-*`, `LGPL-2.1-or-later`,
+  `GPL-2.0-or-later`). A dual license qualifies when one of its options is allowed.
 - **Prohibited:** `GPL-2.0-only`, `LGPL-2.1-only`, and GPL-incompatible licenses (`EPL-1.0`, `CDDL`,
   `SSPL`, proprietary).
 - **Before adding any crate**, check its license and its dependency tree, e.g. `cargo tree` plus the
   `license` field on crates.io, or `cargo deny check licenses`.
+- **`about.toml` lists the licenses the release build accepts.** Its `accepted` holds only the licenses
+  the tree uses now. A new crate under another allowed license needs that license added there, and a
+  crate whose license files cargo-about cannot read needs a `clarify` entry, or the release build
+  stops. Check with `cargo about generate --locked --fail about.hbs` (cargo-about 0.9.2): no
+  `MISSING:` line and nothing on stderr.
 
 **TPP-derived code.**
 
@@ -54,6 +59,10 @@ Either way:
   `ptmprophet-rs[.exe]` name — never add the version to it.**
 - It copies `COPYING`, `COPYING.LESSER` and `NOTICE` from the repo root to the root of each zip, and
   stops before building a commit that lacks one of them. Keep them at the root.
+- It writes `THIRD-PARTY-LICENSES.txt` (cargo-about, from `about.toml` and `about.hbs`) and
+  `licenses/Rust-standard-library.html` at the root of each zip, and stops at a commit without
+  `about.toml` or `about.hbs` at the root, or whose `about.toml` `targets` lacks the target it builds
+  (`x86_64-pc-windows-msvc`, `x86_64-unknown-linux-gnu`).
 
 ## Linux builds: glibc 2.28 floor
 
