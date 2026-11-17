@@ -1,0 +1,52 @@
+[package]
+name = "ptmprophet-rs"
+version = "0.1.0"
+edition = "2021"
+description = "PTM site localization: scores variable-modification placement on PSMs from MS/MS fragment evidence."
+license = "LGPL-3.0-or-later"
+publish = false
+
+[[bin]]
+name = "ptmprophet-rs"
+path = "src/main.rs"
+
+[lib]
+name = "ptmprophet_rs"
+path = "src/lib.rs"
+
+# --- Dependencies ---
+[dependencies]
+# mzML reading. We disable mzdata's default features (they pull `zlib-ng-compat`, which
+# compiles C) and instead select the pure-Rust flate2 backend via the `miniz_oxide` feature, so the
+# crate still builds with no C toolchain. Only the `mzml` reader is needed — no mgf / mzMLb (hdf5) /
+# thermo / peak-picking (mzsignal) — keeping the dependency tree lean and offline-fetchable.
+mzdata = { version = "0.64", default-features = false, features = ["mzml", "miniz_oxide"] }
+
+# Global allocator: mimalloc is a fast, multi-thread-friendly drop-in allocator (better than the
+# system allocator under PTMProphet-rs's many short-lived per-PSM/per-spectrum allocations across
+# threads).
+# NOTE: unlike the rest of the tree, this compiles bundled C (via the `cc` crate); the MSVC build tools
+# that rustc already uses for linking provide the C compiler. Wired in as the #[global_allocator] in
+# src/main.rs (binary only; the library and tests keep the default allocator).
+mimalloc = "0.1"
+
+# Command-line parsing: standard Unix-style flags via clap's derive API (gives --help/--version,
+# validation, and clear usage errors).
+clap = { version = "4", features = ["derive"] }
+
+# Logging — same setup as FragSpecLib: the `log` facade with the `env_logger` backend (formatted in
+# src/main.rs to a local timestamp + colored level, no module target) and `chrono` for the local time.
+# Diagnostics go to stderr, filtered at runtime via RUST_LOG (default `info`).
+log = "0.4"
+env_logger = "0.11"
+chrono = "0.4"
+
+# Intra-process data parallelism uses std::thread::scope (no rayon dependency); results are merged in
+# input order so the output is deterministic and identical for any worker count.
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true

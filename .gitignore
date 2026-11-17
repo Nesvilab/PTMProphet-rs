@@ -1,0 +1,7 @@
+/target
+**/*.rs.bk
+# Cargo.lock is committed: ptmprophet-rs is a binary/application, so the lockfile is
+# tracked for reproducible `cargo build --locked` builds (incl. CI).
+# local validation artifacts
+/tests/data/
+*.mod.pep.xml

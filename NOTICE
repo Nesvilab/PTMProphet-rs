@@ -1,0 +1,138 @@
+PTMProphet-rs
+PTM site localization: scores variable-modification placement on PSMs from
+MS/MS fragment evidence.
+Copyright (C) 2026 The Regents of the University of Michigan
+
+
+Origin
+------
+
+PTMProphet-rs is a Rust translation of PTMProphet and supporting classes from
+the Trans-Proteomic Pipeline (TPP) release 6.3.2
+(https://svn.code.sf.net/p/sashimi/code/tags/release_6-3-2). It uses the
+upstream files below. Each entry gives the file's path in that release, its
+copyright line as written in the file, and the PTMProphet-rs files that derive
+from it. Entries marked [precautionary] contribute only numeric constants or a
+few numeric details, and are listed so that no attribution is missing.
+
+  src/Validation/PTMProphetParser/PTMProphetParser.cpp
+      Copyright (C) 2011 David Shteynberg
+      PTMProphet-rs: src/config.rs, src/pipeline.rs, src/em/train.rs,
+      src/pepxml/index.rs, src/pepxml/psm.rs, src/pepxml/roc.rs,
+      src/pepxml/writer.rs
+
+  src/Validation/PTMProphetParser/PTMProphetParser.h
+      Copyright (C) 2011 David Shteynberg
+      PTMProphet-rs: src/pepxml/roc.rs
+
+  src/Validation/PTMProphetParser/PTMProphetMpx.cpp
+      Copyright (C) 2011 David Shteynberg
+      PTMProphet-rs: src/mpx/mod.rs, src/mpx/combinatorics.rs,
+      src/model/masses.rs (precursor proton mass) [precautionary for masses.rs]
+
+  src/Validation/PTMProphetParser/PTMProphetMpx.h
+      Copyright (C) 2011 David Shteynberg
+      PTMProphet-rs: src/mpx/mod.rs
+
+  src/Validation/PTMProphetParser/PTMProphetMain.cpp
+      Copyright (C) 2011 David Shteynberg
+      PTMProphet-rs: src/config.rs
+
+  src/Validation/InterProphet/InterProphetParser/KDModel.cpp
+      Copyright (C) 2007 David Shteynberg
+      PTMProphet-rs: src/em/kdmodel.rs, src/em/train.rs, src/em/density.rs
+
+  src/Validation/InterProphet/InterProphetParser/KDModel.h
+      Copyright (C) 2007 David Shteynberg
+      PTMProphet-rs: src/em/kdmodel.rs
+
+  src/Search/SpectraST/Peptide.cpp
+      Copyright (C) 2006 Henry Lam
+      PTMProphet-rs: src/model/peptide.rs (fragment m/z),
+      src/model/masses.rs (residue masses) [precautionary for masses.rs]
+
+  src/Search/SpectraST/SpectraSTPeakList.hpp
+      Copyright (C) 2006 Henry Lam
+      PTMProphet-rs: src/mpx/mod.rs (peak lookup)
+
+  src/Search/SpectraST/Analyte.cpp [precautionary]
+      Copyright (C) 2006 Henry Lam
+      PTMProphet-rs: src/model/masses.rs (element and group masses)
+
+  src/Parsers/Parser/Tag.cpp
+      Copyright (C) 2003 Andrew Keller
+      Performance work Copyright (C) 2007 Insilicos and Labkey
+      PTMProphet-rs: src/pepxml/tag.rs
+
+  src/Parsers/Parser/Tag.h
+      Copyright (C) 2003 Andrew Keller
+      PTMProphet-rs: src/pepxml/tag.rs
+
+  src/Validation/Distribution/NonParametricDistribution.cpp
+      Copyright (C) 2003 Andrew Keller
+      PTMProphet-rs: src/em/density.rs (weighted kernel density fit and its
+      interpolation: wtDensityFit, predictDensityFit)
+
+  src/Validation/Distribution/NonParametricDistribution.h
+      Copyright (C) 2007 Henry Lam
+      PTMProphet-rs: src/em/density.rs (declarations of those functions)
+
+  src/Validation/Distribution/GaussianDistribution.cpp
+      Copyright (C) 2003 Andrew Keller
+      PTMProphet-rs: src/em/density.rs (Gaussian density: getGaussianProb)
+
+
+License
+-------
+
+Each upstream file above carries this license notice, quoted here from
+PTMProphetParser.cpp:
+
+    This library is free software; you can redistribute it and/or
+    modify it under the terms of the GNU Lesser General Public
+    License as published by the Free Software Foundation; either
+    version 2.1 of the License, or (at your option) any later version.
+
+    This library is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+    Lesser General Public License for more details.
+
+    You should have received a copy of the GNU Lesser General Public
+    License along with this library; if not, write to the Free Software
+    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+
+PTMProphet-rs is distributed under the GNU Lesser General Public License
+version 3 or (at your option) any later version, as that notice permits. The
+text of the GNU Lesser General Public License version 3 is in COPYING.LESSER,
+and the text of the GNU General Public License version 3, which it
+supplements, is in COPYING.
+
+
+Changes
+-------
+
+In June 2026 the University of Michigan translated the files above into Rust
+and restructured them as PTMProphet-rs. PTMProphet-rs has been modified since;
+the git history records each change.
+
+
+Affiliation
+-----------
+
+PTMProphet-rs is an independent Rust port of PTMProphet, part of the
+Trans-Proteomic Pipeline from the Institute for Systems Biology; it is not
+affiliated with or endorsed by ISB or the TPP developers. PTMProphet is the
+work of David Shteynberg et al.
+
+
+Citation
+--------
+
+PTMProphet is described in:
+
+Shteynberg DD, Deutsch EW, Campbell DS, Hoopmann MR, Kusebauch U, Lee D,
+Mendoza L, Midha MK, Sun Z, Whetton AD, Moritz RL. PTMProphet: Fast and
+Accurate Mass Modification Localization for the Trans-Proteomic Pipeline.
+J Proteome Res. 2019;18(12):4262-4272. doi:10.1021/acs.jproteome.9b00205.
+PMID: 31290668.
