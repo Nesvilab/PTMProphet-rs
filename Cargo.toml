@@ -1,6 +1,6 @@
 [package]
 name = "ptmprophet-rs"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 description = "PTM site localization: scores variable-modification placement on PSMs from MS/MS fragment evidence."
 license = "LGPL-3.0-or-later"
