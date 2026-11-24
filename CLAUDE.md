@@ -90,6 +90,14 @@ cargo zigbuild --release --locked --target x86_64-unknown-linux-gnu.2.28 --bin p
 
 To change the floor, edit that one suffix in `build-ptmprophet-rs.yml`.
 
+## Windows builds: static C runtime
+
+`.cargo/config.toml` links the C runtime statically for `x86_64-pc-windows-msvc` (`+crt-static`), so
+the exe imports Windows system DLLs only and starts on a Windows without the Visual C++
+redistributable. The release build checks the imports with FragPipe-tools' `check-windows-dlls`
+action. A `RUSTFLAGS` environment variable replaces the config's flags, so a build that sets one
+must add `-C target-feature=+crt-static` to it.
+
 ## Logging & message printing
 
 All runtime messages go through the **`log` crate**, routed by the `env_logger` set up once in

@@ -1,0 +1,4 @@
+# Windows: link the C runtime statically, so the exe imports Windows system DLLs only and runs without
+# the Visual C++ redistributable (VCRUNTIME140.dll). FragPipe-tools' release build checks the imports.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
