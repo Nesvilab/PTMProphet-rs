@@ -302,9 +302,10 @@ fn build_work_items<'a>(
     .collect()
 }
 
-/// Decode every needed spectrum once, grouped by run file (each file decoded in parallel). A run
-/// file that cannot be opened is a fatal error (fail-fast), but an individual scan missing from an
-/// opened file is tolerated (omitted, then skipped downstream).
+/// Decode every needed spectrum once, grouped by run file (each file decoded in parallel). A missing
+/// `_calibrated.mzML` is replaced as [`resolve_spectrum_file`] describes. A run file that cannot be
+/// opened is a fatal error (fail-fast), but an individual scan missing from an opened file is
+/// tolerated (omitted, then skipped downstream).
 fn load_store(items: &[WorkItem]) -> Result<SpectrumStore> {
     let mut needed: HashMap<&str, Vec<(i64, &str)>> = HashMap::new();
     for it in items {
@@ -312,7 +313,8 @@ fn load_store(items: &[WorkItem]) -> Result<SpectrumStore> {
     }
     let mut store = SpectrumStore::with_capacity(needed.len());
     for (path, requests) in needed {
-        let reader = MzmlReader::open(Path::new(path))?;
+        let file = resolve_spectrum_file(Path::new(path))?;
+        let reader = MzmlReader::open(&file)?;
         let spectra = reader.load_scans(&requests)?;
         let missing = requests.iter().filter(|(scan, _)| !spectra.contains_key(scan)).count();
         if missing > 0 {
@@ -320,12 +322,51 @@ fn load_store(items: &[WorkItem]) -> Result<SpectrumStore> {
                 "{} of {} PSMs have no matching spectrum in {}; they are written without localization",
                 missing,
                 requests.len(),
-                Path::new(path).display()
+                file.display()
             );
         }
         store.insert(path.to_string(), spectra);
     }
     Ok(store)
+}
+
+/// The suffix FragPipe gives the mzML of MSFragger's calibrated spectra, matched in any case.
+const CALIBRATED_SUFFIX: &str = "_calibrated.mzML";
+
+/// The mzML to read for the file-list's spectrum file `listed`.
+///
+/// MSFragger writes no `<base>_calibrated.mzML` for a run with too few PSMs to calibrate, yet
+/// FragPipe lists one for every run when calibration is on. When such a listed file does not exist,
+/// this returns `<base>.mzML` or else `<base>_uncalibrated.mzML`, the files FragPipe's pepXML
+/// rewriting (`RewritePepxml`, `PercolatorOutputToPepXML`) falls back to in the same order, and
+/// fails if neither exists. Any other path is returned as listed.
+fn resolve_spectrum_file(listed: &Path) -> Result<PathBuf> {
+    if listed.exists() {
+        return Ok(listed.to_path_buf());
+    }
+    let Some(base) = listed.to_str().and_then(|s| {
+        let cut = s.len().checked_sub(CALIBRATED_SUFFIX.len())?;
+        s.get(cut..).filter(|tail| tail.eq_ignore_ascii_case(CALIBRATED_SUFFIX)).map(|_| &s[..cut])
+    }) else {
+        return Ok(listed.to_path_buf());
+    };
+    let fallbacks = [PathBuf::from(format!("{base}.mzML")), PathBuf::from(format!("{base}_uncalibrated.mzML"))];
+    match fallbacks.iter().find(|p| p.exists()) {
+        Some(found) => {
+            log::warn!(
+                "Calibrated mzML {} does not exist (MSFragger writes none for a run with too few PSMs to calibrate); reading spectra from {} instead",
+                listed.display(),
+                found.display()
+            );
+            Ok(found.clone())
+        }
+        None => Err(PtmProphetRsError::Mzml(format!(
+            "{} does not exist, and neither does {} or {}",
+            listed.display(),
+            fallbacks[0].display(),
+            fallbacks[1].display()
+        ))),
+    }
 }
 
 /// Match each PSM's fragment ladder to its spectrum exactly once (parallel). Items whose spectrum is
@@ -475,5 +516,53 @@ mod tests {
         assert!(p7 > p5 && p7 > 0.5, "best site should be pos7");
         assert!((p5 - 0.3032).abs() < 1e-3, "pos5 prob {p5} (oracle 0.3032)");
         assert!((p7 - 0.6968).abs() < 1e-3, "pos7 prob {p7} (oracle 0.6968)");
+    }
+
+    /// A fresh, empty directory for one test's files.
+    fn empty_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("ptmprophet-rs-{name}-{}", std::process::id()));
+        std::fs::remove_dir_all(&dir).ok();
+        std::fs::create_dir_all(&dir).expect("create test directory");
+        dir
+    }
+
+    fn touch(dir: &Path, name: &str) -> PathBuf {
+        let path = dir.join(name);
+        std::fs::write(&path, "").expect("create test file");
+        path
+    }
+
+    #[test]
+    fn missing_calibrated_mzml_falls_back_like_fragpipe() {
+        let dir = empty_dir("resolve-spectrum-file");
+
+        // A listed file that exists is read as listed.
+        let present = touch(&dir, "a_calibrated.mzML");
+        touch(&dir, "a.mzML");
+        assert_eq!(resolve_spectrum_file(&present).unwrap(), present);
+
+        // A missing calibrated file: <base>.mzML first, then <base>_uncalibrated.mzML.
+        let both = touch(&dir, "b.mzML");
+        touch(&dir, "b_uncalibrated.mzML");
+        assert_eq!(resolve_spectrum_file(&dir.join("b_calibrated.mzML")).unwrap(), both);
+        let uncalibrated = touch(&dir, "c_uncalibrated.mzML");
+        assert_eq!(resolve_spectrum_file(&dir.join("c_calibrated.mzML")).unwrap(), uncalibrated);
+        let other_case = touch(&dir, "d.mzML");
+        assert_eq!(resolve_spectrum_file(&dir.join("d_CALIBRATED.MZML")).unwrap(), other_case, "suffix in any case");
+
+        // No fallback exists: the error names every path tried.
+        let listed = dir.join("e_calibrated.mzML");
+        let err = resolve_spectrum_file(&listed).unwrap_err().to_string();
+        for tried in [listed.clone(), dir.join("e.mzML"), dir.join("e_uncalibrated.mzML")] {
+            assert!(err.contains(&tried.display().to_string()), "{err} names {}", tried.display());
+        }
+
+        // Any other missing file is returned as listed, so opening it fails with its own path.
+        touch(&dir, "f_uncalibrated.mzML");
+        let plain = dir.join("f.mzML");
+        assert_eq!(resolve_spectrum_file(&plain).unwrap(), plain);
+        assert_eq!(resolve_spectrum_file(&dir.join("calibrated.mzML")).unwrap(), dir.join("calibrated.mzML"));
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

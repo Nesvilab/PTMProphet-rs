@@ -98,7 +98,9 @@ pub struct InputSpec {
     /// The `interact-*.pep.xml` to read.
     pub pep_xml: PathBuf,
     /// The mzML spectrum file for this input, taken verbatim from the file-list. Every PSM in
-    /// `pep_xml` is localized against this file; the path is never read from inside the pepXML.
+    /// `pep_xml` is localized against this file, or against its fallback when it is a missing
+    /// `_calibrated.mzML` (see `pipeline::resolve_spectrum_file`); the path is never read from inside
+    /// the pepXML.
     pub mzml: PathBuf,
     /// Where the localized output is written.
     pub out: PathBuf,
@@ -252,7 +254,8 @@ impl Config {
 /// on **tabs** (so paths may contain spaces) or, if it has no tab, on whitespace. Each field is
 /// classified by extension: each line must name **exactly one** `*.pep.xml`/`*.pepXML` input **and
 /// exactly one** `*.mzML` spectrum file — that mzML is where the input's spectra are read from (the
-/// path is never taken from inside the pepXML). The output path defaults to the input with
+/// path is never taken from inside the pepXML), unless it is a missing `_calibrated.mzML`, which the
+/// pipeline replaces when it opens the file. The output path defaults to the input with
 /// `.pep.xml` → `.mod.pep.xml`. Example:
 /// ```text
 /// # one pep.xml + its mzML per line (tab- or space-separated)

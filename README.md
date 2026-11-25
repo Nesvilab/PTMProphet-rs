@@ -61,7 +61,9 @@ probabilities. Each input is written to a sibling `interact-*.mod.pep.xml`.
 The file-list has one input per non-blank line (`#` starts a comment line). Each line names one
 pepXML and the one mzML its spectra are read from, separated by a **tab** (so paths may contain
 spaces) or by whitespace. The mzML is required: PTMProphet-rs never takes the spectrum path from
-inside the pepXML.
+inside the pepXML. MSFragger writes no `<base>_calibrated.mzML` for a run with too few PSMs to
+calibrate, so when a listed `*_calibrated.mzML` does not exist, PTMProphet-rs reads `<base>.mzML`,
+or else `<base>_uncalibrated.mzML`, and logs a warning; when neither exists, the run stops.
 
 ```text
 # filelist_ptmloc.txt — five fractions, each pepXML with its mzML (tab- or space-separated)
