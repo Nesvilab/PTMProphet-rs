@@ -313,7 +313,17 @@ fn load_store(items: &[WorkItem]) -> Result<SpectrumStore> {
     let mut store = SpectrumStore::with_capacity(needed.len());
     for (path, requests) in needed {
         let reader = MzmlReader::open(Path::new(path))?;
-        store.insert(path.to_string(), reader.load_scans(&requests)?);
+        let spectra = reader.load_scans(&requests)?;
+        let missing = requests.iter().filter(|(scan, _)| !spectra.contains_key(scan)).count();
+        if missing > 0 {
+            log::warn!(
+                "{} of {} PSMs have no matching spectrum in {}; they are written without localization",
+                missing,
+                requests.len(),
+                Path::new(path).display()
+            );
+        }
+        store.insert(path.to_string(), spectra);
     }
     Ok(store)
 }
