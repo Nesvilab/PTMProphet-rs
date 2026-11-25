@@ -44,7 +44,7 @@ pub struct Spectrum {
     pub ms_level: u8,
     pub precursor_mz: f64,
     pub precursor_charge: i32,
-    /// Peak m/z values (mzML stores them ascending).
+    /// Peak m/z values, ascending: the reader sorts peaks that the file stores in another order.
     pub mz: Vec<f64>,
     /// Peak intensities, parallel to `mz`.
     pub intensity: Vec<f64>,
@@ -225,6 +225,14 @@ where
         mz.truncate(n);
         intensity.truncate(n);
     }
+    // Peak matching binary-searches m/z, so the peaks must be in m/z order. diaTracer writes them by
+    // descending intensity instead; PTMProphet's SpectraST peak list sorts by m/z before any lookup.
+    if !mz.is_sorted() {
+        let mut order: Vec<usize> = (0..mz.len()).collect();
+        order.sort_by(|&a, &b| mz[a].total_cmp(&mz[b]));
+        mz = order.iter().map(|&i| mz[i]).collect();
+        intensity = order.iter().map(|&i| intensity[i]).collect();
+    }
 
     let (precursor_mz, precursor_charge) = match spec.precursor().and_then(|p| p.ion()) {
         Some(ion) => (ion.mz, ion.charge.unwrap_or(0)),
@@ -257,8 +265,8 @@ mod tests {
     }
 
     /// Write an indexed mzML with one MS2 spectrum per native ID. With `base = 100 * (i + 1)` for the
-    /// spectrum at 0-based position `i`, its peaks are m/z `base, base + 20, base + 50` with
-    /// intensities `20, 10, 30`.
+    /// spectrum at 0-based position `i`, its peaks are written by descending intensity, as diaTracer
+    /// writes them: m/z `base + 50, base, base + 20` with intensities `30, 20, 10`.
     fn write_indexed_mzml(path: &Path, ids: &[&str]) {
         let mut xml = String::from(concat!(
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
@@ -295,8 +303,8 @@ mod tests {
             offsets.push((*id, xml.len()));
             let base = 100.0 * (i + 1) as f64;
             let encode = |values: [f64; 3]| base64(&values.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>());
-            let mz = encode([base, base + 20.0, base + 50.0]);
-            let intensity = encode([20.0, 10.0, 30.0]);
+            let mz = encode([base + 50.0, base, base + 20.0]);
+            let intensity = encode([30.0, 20.0, 10.0]);
             xml.push_str(&format!(
                 concat!(
                     "<spectrum index=\"{i}\" id=\"{id}\" defaultArrayLength=\"3\">\n",
@@ -348,8 +356,8 @@ mod tests {
         let reader = MzmlReader::open(&path).expect("open mzML with frame=N ids");
         assert_eq!(reader.len(), 3);
         let s = reader.spectrum_for_scan(3).expect("scan 3");
-        assert_eq!(s.mz, vec![200.0, 220.0, 250.0], "scan 3 is the second spectrum");
-        assert_eq!(s.intensity, vec![20.0, 10.0, 30.0]);
+        assert_eq!(s.mz, vec![200.0, 220.0, 250.0], "scan 3 is the second spectrum, peaks in m/z order");
+        assert_eq!(s.intensity, vec![20.0, 10.0, 30.0], "intensities move with their m/z");
         assert_eq!(s.ms_level, 2);
         assert!(reader.spectrum_for_scan(2).is_err(), "no spectrum has scan number 2");
 
@@ -357,6 +365,7 @@ mod tests {
         assert_eq!(batch.len(), 2, "scan 2 is absent and omitted");
         assert_eq!(batch[&1].mz, vec![100.0, 120.0, 150.0]);
         assert_eq!(batch[&4].mz, vec![300.0, 320.0, 350.0]);
+        assert_eq!(batch[&4].intensity, vec![20.0, 10.0, 30.0]);
 
         drop(reader);
         std::fs::remove_file(&path).ok();
@@ -378,6 +387,8 @@ mod tests {
         assert_eq!(s.ms_level, 2);
         assert_eq!(s.mz.len(), 500);
         assert_eq!(s.mz.len(), s.intensity.len());
+        // diaTracer stores the peaks by descending intensity; the reader returns them by m/z.
+        assert!(s.mz.windows(2).all(|w| w[0] <= w[1]), "m/z sorted");
     }
 
     #[test]
