@@ -306,14 +306,14 @@ fn build_work_items<'a>(
 /// file that cannot be opened is a fatal error (fail-fast), but an individual scan missing from an
 /// opened file is tolerated (omitted, then skipped downstream).
 fn load_store(items: &[WorkItem]) -> Result<SpectrumStore> {
-    let mut needed: HashMap<&str, Vec<i64>> = HashMap::new();
+    let mut needed: HashMap<&str, Vec<(i64, &str)>> = HashMap::new();
     for it in items {
-        needed.entry(it.psm.data_file.as_str()).or_default().push(it.psm.scan);
+        needed.entry(it.psm.data_file.as_str()).or_default().push((it.psm.scan, it.psm.native_id.as_str()));
     }
     let mut store = SpectrumStore::with_capacity(needed.len());
-    for (path, scans) in needed {
+    for (path, requests) in needed {
         let reader = MzmlReader::open(Path::new(path))?;
-        store.insert(path.to_string(), reader.load_scans(&scans)?);
+        store.insert(path.to_string(), reader.load_scans(&requests)?);
     }
     Ok(store)
 }

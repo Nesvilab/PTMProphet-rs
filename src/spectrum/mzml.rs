@@ -17,9 +17,11 @@
 //! forward-only seeks). The single-scan [`MzmlReader::spectrum_for_scan`] is kept for tests and
 //! one-off lookups.
 //!
-//! Spectrum lookup: a PSM's pepXML `start_scan` is matched against the scan number MSFragger derives
-//! from each native ID ([`scan_number`]), so every native-ID format MSFragger reads resolves,
-//! including diaTracer's `frame=N`.
+//! Spectrum lookup: a PSM names its spectrum by pepXML `spectrumNativeID` and `start_scan`. When the
+//! file holds that native ID, the PSM gets that spectrum, which is exact for every ID format and in
+//! files that drop or reorder spectra, such as MSFragger's `_calibrated.mzML`. Otherwise `start_scan`
+//! is matched against the scan number MSFragger derives from each native ID ([`scan_number`]), which
+//! covers diaTracer's `frame=N` and other files that keep the searched spectra in place.
 
 use std::collections::HashMap;
 use std::fs::File;
@@ -76,8 +78,9 @@ pub struct MzmlReader {
     path: PathBuf,
     /// scan number → ordinal position in the file's spectrum offset index.
     scan_to_index: HashMap<i64, usize>,
-    /// A reader kept open for single-scan random access (tests / one-off lookups). The batch
-    /// [`load_scans`](Self::load_scans) path opens its own per-worker readers instead.
+    /// A reader kept open for single-scan random access (tests / one-off lookups) and for its
+    /// native-ID index. The batch [`load_scans`](Self::load_scans) decodes with its own per-worker
+    /// readers.
     inner: Mutex<Reader>,
 }
 
@@ -130,18 +133,29 @@ impl MzmlReader {
         })
     }
 
-    /// Decode a batch of scans in parallel, returning `scan → Spectrum` for those present.
+    /// Decode a batch of PSM spectra in parallel, returning `scan → Spectrum` for those found.
     ///
-    /// Scans not in the index are silently omitted (the caller tolerates skipping missing scans).
+    /// Each request is a PSM's `(scan, native_id)`, with an empty `native_id` when the pepXML has
+    /// none. A native ID the file holds picks the spectrum; any other request goes by scan number.
+    /// Requests that match no spectrum are omitted (the caller tolerates skipping missing scans).
     /// Work is split into `worker_count` contiguous slices of the offset index so each worker seeks
     /// forward through its region; results are merged into one map.
-    pub fn load_scans(&self, scans: &[i64]) -> Result<HashMap<i64, Spectrum>> {
-        // Resolve to (ordinal, scan), drop unknown scans, sort by ordinal for forward-only seeks,
-        // and dedup (a scan resolves to exactly one ordinal).
-        let mut work: Vec<(usize, i64)> = scans
-            .iter()
-            .filter_map(|&s| self.scan_to_index.get(&s).map(|&ord| (ord, s)))
-            .collect();
+    pub fn load_scans(&self, requests: &[(i64, &str)]) -> Result<HashMap<i64, Spectrum>> {
+        // Resolve to (ordinal, scan), drop unmatched requests, sort by ordinal for forward-only
+        // seeks, and dedup repeated requests.
+        let mut work: Vec<(usize, i64)> = {
+            let reader = self
+                .inner
+                .lock()
+                .map_err(|_| PtmProphetRsError::Mzml("mzML reader lock poisoned".into()))?;
+            requests
+                .iter()
+                .filter_map(|&(scan, native_id)| {
+                    let by_id = if native_id.is_empty() { None } else { reader.spectrum_index.index_of(native_id) };
+                    by_id.or_else(|| self.scan_to_index.get(&scan).copied()).map(|ord| (ord, scan))
+                })
+                .collect()
+        };
         work.sort_unstable();
         work.dedup();
         if work.is_empty() {
@@ -361,11 +375,44 @@ mod tests {
         assert_eq!(s.ms_level, 2);
         assert!(reader.spectrum_for_scan(2).is_err(), "no spectrum has scan number 2");
 
-        let batch = reader.load_scans(&[4, 1, 2]).expect("batch load");
+        let batch = reader.load_scans(&[(4, ""), (1, ""), (2, "")]).expect("batch load");
         assert_eq!(batch.len(), 2, "scan 2 is absent and omitted");
         assert_eq!(batch[&1].mz, vec![100.0, 120.0, 150.0]);
         assert_eq!(batch[&4].mz, vec![300.0, 320.0, 350.0]);
         assert_eq!(batch[&4].intensity, vec![20.0, 10.0, 30.0]);
+
+        drop(reader);
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn native_ids_pick_spectra_that_positions_would_miss() {
+        // A demultiplexed Thermo run after MSFragger dropped spectra: these IDs carry no scan
+        // number, so the positions give scans 1-3, but the pepXML's start_scan values (here 7 and
+        // 8) come from the positions in the original file. The native IDs still match exactly.
+        let path = std::env::temp_dir()
+            .join(format!("ptmprophet-rs-native-ids-{}.mzML", std::process::id()));
+        write_indexed_mzml(
+            &path,
+            &[
+                "controllerType=0 controllerNumber=1 scan=4 demux=0",
+                "controllerType=0 controllerNumber=1 scan=5 demux=0",
+                "controllerType=0 controllerNumber=1 scan=5 demux=1",
+            ],
+        );
+        let reader = MzmlReader::open(&path).expect("open mzML with demux ids");
+        let batch = reader
+            .load_scans(&[
+                (7, "controllerType=0 controllerNumber=1 scan=5 demux=0"),
+                (8, "controllerType=0 controllerNumber=1 scan=5 demux=1"),
+                (2, "controllerType=0 controllerNumber=1 scan=9 demux=0"), // not in the file: by scan
+                (9, ""),                                                   // no ID, no scan 9
+            ])
+            .expect("batch load");
+        assert_eq!(batch.len(), 3);
+        assert_eq!(batch[&7].mz[0], 200.0, "start_scan 7 is the second spectrum, by its native ID");
+        assert_eq!(batch[&8].mz[0], 300.0, "start_scan 8 is the third spectrum, by its native ID");
+        assert_eq!(batch[&2].mz[0], 200.0, "an ID the file lacks falls back to the scan number");
 
         drop(reader);
         std::fs::remove_file(&path).ok();
@@ -408,7 +455,7 @@ mod tests {
         assert!(s.min_intensity() > 0.0);
 
         // The batch loader returns the same peaks as the single-scan path.
-        let batch = reader.load_scans(&[3185]).expect("batch load");
+        let batch = reader.load_scans(&[(3185, "")]).expect("batch load");
         let b = batch.get(&3185).expect("scan 3185 in batch");
         assert_eq!(b.mz, s.mz);
         assert_eq!(b.intensity, s.intensity);

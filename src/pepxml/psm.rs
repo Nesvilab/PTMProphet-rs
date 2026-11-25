@@ -23,6 +23,8 @@ pub struct PsmRecord {
     pub exp_label: String,
     pub spectrum: String,
     pub scan: i64,
+    /// The spectrum's native ID (`spectrumNativeID`, XML entities decoded); empty if absent.
+    pub native_id: String,
     pub charge: i32,
     pub calc_neut_mass: f64,
     pub pep_seq: String,
@@ -57,6 +59,7 @@ pub fn for_each_psm(content: &str, mut f: impl FnMut(&PsmRecord)) {
                 cur.spectrum = tag.get("spectrum").unwrap_or("").to_string();
                 cur.charge = tag.get("assumed_charge").map(atoi).unwrap_or(0) as i32;
                 cur.scan = tag.get("start_scan").map(atoi).unwrap_or(0);
+                cur.native_id = tag.get("spectrumNativeID").map(xml_unescape).unwrap_or_default();
                 in_query = true;
                 hit_rank = 0;
                 sh_go = false;
@@ -104,10 +107,49 @@ pub fn for_each_psm(content: &str, mut f: impl FnMut(&PsmRecord)) {
     });
 }
 
+/// Decode the five predefined XML entities in an attribute value, as the mzML reader does for the
+/// native IDs in its index, so the two compare equal.
+fn xml_unescape(value: &str) -> String {
+    if !value.contains('&') {
+        return value.to_string();
+    }
+    value
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&amp;", "&")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::path::Path;
+
+    #[test]
+    fn native_id_is_read_and_unescaped() {
+        let xml = concat!(
+            "<spectrum_query spectrum=\"a.7.7.2\" start_scan=\"7\" spectrumNativeID=\"frame=7\" assumed_charge=\"2\">\n",
+            "<search_hit hit_rank=\"1\" peptide=\"PEPMK\" calc_neutral_pep_mass=\"600.0\">\n",
+            "<modification_info><mod_aminoacid_mass position=\"4\" mass=\"147.0354\"/></modification_info>\n",
+            "</search_hit>\n</spectrum_query>\n",
+            "<spectrum_query spectrum=\"a.8.8.2\" start_scan=\"8\" spectrumNativeID=\"id=&quot;8&quot; &amp;amp; more\" assumed_charge=\"2\">\n",
+            "<search_hit hit_rank=\"1\" peptide=\"PEPMK\" calc_neutral_pep_mass=\"600.0\">\n",
+            "<modification_info><mod_aminoacid_mass position=\"4\" mass=\"147.0354\"/></modification_info>\n",
+            "</search_hit>\n</spectrum_query>\n",
+            "<spectrum_query spectrum=\"a.9.9.2\" start_scan=\"9\" assumed_charge=\"2\">\n",
+            "<search_hit hit_rank=\"1\" peptide=\"PEPMK\" calc_neutral_pep_mass=\"600.0\">\n",
+            "<modification_info><mod_aminoacid_mass position=\"4\" mass=\"147.0354\"/></modification_info>\n",
+            "</search_hit>\n</spectrum_query>\n",
+        );
+        let mut got = Vec::new();
+        for_each_psm(xml, |p| got.push((p.scan, p.native_id.clone())));
+        assert_eq!(
+            got,
+            vec![(7, "frame=7".to_string()), (8, "id=\"8\" &amp; more".to_string()), (9, String::new())],
+            "entities are decoded once; a missing spectrumNativeID gives an empty ID"
+        );
+    }
 
     #[test]
     fn psm_stream_real_f05() {
