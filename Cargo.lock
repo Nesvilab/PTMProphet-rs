@@ -642,6 +642,7 @@ dependencies = [
  "log",
  "mimalloc",
  "mzdata",
+ "regex",
 ]
 
 [[package]]

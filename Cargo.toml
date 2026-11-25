@@ -22,6 +22,10 @@ path = "src/lib.rs"
 # thermo / peak-picking (mzsignal) — keeping the dependency tree lean and offline-fetchable.
 mzdata = { version = "0.64", default-features = false, features = ["mzml", "miniz_oxide"] }
 
+# Native-ID → scan-number rules (src/spectrum/scan_id.rs), ported from batmass-io's Java regexes.
+# Already in the tree through mzdata and env_logger, so it adds no crate or license.
+regex = "1"
+
 # Global allocator: mimalloc is a fast, multi-thread-friendly drop-in allocator (better than the
 # system allocator under PTMProphet-rs's many short-lived per-PSM/per-spectrum allocations across
 # threads).

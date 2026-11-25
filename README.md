@@ -176,7 +176,7 @@ src/
   config.rs  pipeline.rs  threads.rs   CLI parsing, orchestration, data-parallel helpers
   model/     masses, modspec, peptide  monoisotopic masses + theoretical fragment ions
   pepxml/    tag, index, psm, writer, roc   pep.xml parse, localized output, ROC summary
-  spectrum/  mzml                      mzML reading
+  spectrum/  mzml, scan_id             mzML reading + scan numbers from native IDs
   mpx/       combinatorics             per-PSM localization engine + peak matching
   em/        kdmodel, density, train   KDE mixture model + EM training
 ```

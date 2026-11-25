@@ -16,6 +16,10 @@
 //! its own `mzdata` reader on the same file, covering a contiguous slice of the offset index for
 //! forward-only seeks). The single-scan [`MzmlReader::spectrum_for_scan`] is kept for tests and
 //! one-off lookups.
+//!
+//! Spectrum lookup: a PSM's pepXML `start_scan` is matched against the scan number MSFragger derives
+//! from each native ID ([`scan_number`]), so every native-ID format MSFragger reads resolves,
+//! including diaTracer's `frame=N`.
 
 use std::collections::HashMap;
 use std::fs::File;
@@ -27,6 +31,7 @@ use mzdata::prelude::*;
 use mzdata::spectrum::ArrayType;
 
 use crate::error::{PtmProphetRsError, Result};
+use crate::spectrum::scan_id::scan_number;
 use crate::threads::worker_count;
 
 /// `mzdata` reader specialized to the default peak types, reading from a `File`.
@@ -81,17 +86,24 @@ impl MzmlReader {
     pub fn open(path: &Path) -> Result<MzmlReader> {
         let reader = Reader::open_path(path.to_path_buf())
             .map_err(|e| PtmProphetRsError::Io { path: path.to_path_buf(), source: e })?;
-        let scan_to_index = build_scan_index(&reader);
+        let (scan_to_index, repeated) = build_scan_index(&reader);
         if scan_to_index.is_empty() {
             return Err(PtmProphetRsError::Mzml(format!(
                 "empty or unindexed spectrum list in {}",
                 path.display()
             )));
         }
+        if repeated > 0 {
+            log::warn!(
+                "{} spectra in {} repeat an earlier spectrum's scan number; a PSM looked up by such a scan number gets the later spectrum",
+                repeated,
+                path.display()
+            );
+        }
         Ok(MzmlReader { path: path.to_path_buf(), scan_to_index, inner: Mutex::new(reader) })
     }
 
-    /// Number of indexed spectra whose native-id carries a scan number.
+    /// Number of distinct scan numbers among the indexed spectra.
     pub fn len(&self) -> usize {
         self.scan_to_index.len()
     }
@@ -175,15 +187,18 @@ fn decode_chunk(path: &Path, chunk: &[(usize, i64)]) -> Result<HashMap<i64, Spec
     Ok(local)
 }
 
-/// Build `scan → ordinal` from the reader's spectrum offset index (file order).
-fn build_scan_index(reader: &Reader) -> HashMap<i64, usize> {
+/// Build `scan → ordinal` from the reader's spectrum offset index (file order), numbering each
+/// spectrum as MSFragger does, with its position plus 1 as the fallback. Also returns how many
+/// spectra repeat an earlier spectrum's scan number; the later spectrum keeps the number.
+fn build_scan_index(reader: &Reader) -> (HashMap<i64, usize>, usize) {
     let mut map = HashMap::with_capacity(reader.spectrum_index.len());
+    let mut repeated = 0;
     for (ord, id) in reader.spectrum_index.keys().enumerate() {
-        if let Some(scan) = scan_from_idref(id) {
-            map.insert(scan, ord);
+        if map.insert(scan_number(id, ord as i64 + 1), ord).is_some() {
+            repeated += 1;
         }
     }
-    map
+    (map, repeated)
 }
 
 /// Map an `mzdata` spectrum onto the [`Spectrum`] view. m/z and intensity are read as f64.
@@ -219,24 +234,150 @@ where
     Spectrum { scan, ms_level: spec.ms_level(), precursor_mz, precursor_charge, mz, intensity }
 }
 
-/// Extract the scan number from a spectrum nativeID like `... scan=3185`.
-fn scan_from_idref(idref: &str) -> Option<i64> {
-    if let Some(pos) = idref.find("scan=") {
-        let rest = &idref[pos + 5..];
-        let n: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
-        return n.parse().ok();
-    }
-    None
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// Standard padded base64, enough to embed peak arrays in a test mzML.
+    fn base64(bytes: &[u8]) -> String {
+        const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        let mut out = String::new();
+        for chunk in bytes.chunks(3) {
+            let byte = |i: usize| chunk.get(i).copied().unwrap_or(0) as u32;
+            let n = byte(0) << 16 | byte(1) << 8 | byte(2);
+            for k in 0..4 {
+                if k <= chunk.len() {
+                    out.push(TABLE[(n >> (18 - 6 * k) & 63) as usize] as char);
+                } else {
+                    out.push('=');
+                }
+            }
+        }
+        out
+    }
+
+    /// Write an indexed mzML with one MS2 spectrum per native ID. With `base = 100 * (i + 1)` for the
+    /// spectrum at 0-based position `i`, its peaks are m/z `base, base + 20, base + 50` with
+    /// intensities `20, 10, 30`.
+    fn write_indexed_mzml(path: &Path, ids: &[&str]) {
+        let mut xml = String::from(concat!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+            "<indexedmzML xmlns=\"http://psi.hupo.org/ms/mzml\">\n",
+            "  <mzML xmlns=\"http://psi.hupo.org/ms/mzml\" version=\"1.1.0\">\n",
+            "    <cvList count=\"1\">\n",
+            "      <cv id=\"MS\" fullName=\"PSI-MS\" URI=\"https://raw.githubusercontent.com/HUPO-PSI/psi-ms-CV/master/psi-ms.obo\"/>\n",
+            "    </cvList>\n",
+            "    <fileDescription>\n",
+            "      <fileContent>\n",
+            "        <cvParam cvRef=\"MS\" accession=\"MS:1000580\" name=\"MSn spectrum\" value=\"\"/>\n",
+            "      </fileContent>\n",
+            "    </fileDescription>\n",
+            "    <softwareList count=\"1\">\n",
+            "      <software id=\"test\" version=\"0\"/>\n",
+            "    </softwareList>\n",
+            "    <instrumentConfigurationList count=\"1\">\n",
+            "      <instrumentConfiguration id=\"IC1\"/>\n",
+            "    </instrumentConfigurationList>\n",
+            "    <dataProcessingList count=\"1\">\n",
+            "      <dataProcessing id=\"DP1\">\n",
+            "        <processingMethod order=\"0\" softwareRef=\"test\"/>\n",
+            "      </dataProcessing>\n",
+            "    </dataProcessingList>\n",
+            "    <run id=\"test\" defaultInstrumentConfigurationRef=\"IC1\">\n",
+        ));
+        xml.push_str(&format!(
+            "      <spectrumList count=\"{}\" defaultDataProcessingRef=\"DP1\">\n",
+            ids.len()
+        ));
+        let mut offsets = Vec::with_capacity(ids.len());
+        for (i, id) in ids.iter().enumerate() {
+            xml.push_str("        ");
+            offsets.push((*id, xml.len()));
+            let base = 100.0 * (i + 1) as f64;
+            let encode = |values: [f64; 3]| base64(&values.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>());
+            let mz = encode([base, base + 20.0, base + 50.0]);
+            let intensity = encode([20.0, 10.0, 30.0]);
+            xml.push_str(&format!(
+                concat!(
+                    "<spectrum index=\"{i}\" id=\"{id}\" defaultArrayLength=\"3\">\n",
+                    "          <cvParam cvRef=\"MS\" accession=\"MS:1000511\" name=\"ms level\" value=\"2\"/>\n",
+                    "          <cvParam cvRef=\"MS\" accession=\"MS:1000580\" name=\"MSn spectrum\" value=\"\"/>\n",
+                    "          <binaryDataArrayList count=\"2\">\n",
+                    "            <binaryDataArray encodedLength=\"{mz_len}\">\n",
+                    "              <cvParam cvRef=\"MS\" accession=\"MS:1000523\" name=\"64-bit float\" value=\"\"/>\n",
+                    "              <cvParam cvRef=\"MS\" accession=\"MS:1000576\" name=\"no compression\" value=\"\"/>\n",
+                    "              <cvParam cvRef=\"MS\" accession=\"MS:1000514\" name=\"m/z array\" value=\"\"/>\n",
+                    "              <binary>{mz}</binary>\n",
+                    "            </binaryDataArray>\n",
+                    "            <binaryDataArray encodedLength=\"{int_len}\">\n",
+                    "              <cvParam cvRef=\"MS\" accession=\"MS:1000523\" name=\"64-bit float\" value=\"\"/>\n",
+                    "              <cvParam cvRef=\"MS\" accession=\"MS:1000576\" name=\"no compression\" value=\"\"/>\n",
+                    "              <cvParam cvRef=\"MS\" accession=\"MS:1000515\" name=\"intensity array\" value=\"\"/>\n",
+                    "              <binary>{int}</binary>\n",
+                    "            </binaryDataArray>\n",
+                    "          </binaryDataArrayList>\n",
+                    "        </spectrum>\n",
+                ),
+                i = i,
+                id = id,
+                mz_len = mz.len(),
+                mz = mz,
+                int_len = intensity.len(),
+                int = intensity,
+            ));
+        }
+        xml.push_str("      </spectrumList>\n    </run>\n  </mzML>\n");
+        let index_offset = xml.len() + 2;
+        xml.push_str("  <indexList count=\"1\">\n    <index name=\"spectrum\">\n");
+        for (id, offset) in offsets {
+            xml.push_str(&format!("      <offset idRef=\"{id}\">{offset}</offset>\n"));
+        }
+        xml.push_str("    </index>\n  </indexList>\n");
+        xml.push_str(&format!("  <indexListOffset>{index_offset}</indexListOffset>\n</indexedmzML>\n"));
+        std::fs::write(path, xml).expect("write test mzML");
+    }
+
     #[test]
-    fn scan_idref_parse() {
-        assert_eq!(scan_from_idref("controllerType=0 controllerNumber=1 scan=3185"), Some(3185));
-        assert_eq!(scan_from_idref("nonsense"), None);
+    fn frame_ids_resolve_to_their_scan_numbers() {
+        // diaTracer and MSFragger's calibrated mzML name spectra `frame=N`; MSFragger's pepXML
+        // start_scan is N. A gap in the frame numbers shows N is parsed, not taken from the position.
+        let path = std::env::temp_dir()
+            .join(format!("ptmprophet-rs-frame-ids-{}.mzML", std::process::id()));
+        write_indexed_mzml(&path, &["frame=1", "frame=3", "frame=4"]);
+
+        let reader = MzmlReader::open(&path).expect("open mzML with frame=N ids");
+        assert_eq!(reader.len(), 3);
+        let s = reader.spectrum_for_scan(3).expect("scan 3");
+        assert_eq!(s.mz, vec![200.0, 220.0, 250.0], "scan 3 is the second spectrum");
+        assert_eq!(s.intensity, vec![20.0, 10.0, 30.0]);
+        assert_eq!(s.ms_level, 2);
+        assert!(reader.spectrum_for_scan(2).is_err(), "no spectrum has scan number 2");
+
+        let batch = reader.load_scans(&[4, 1, 2]).expect("batch load");
+        assert_eq!(batch.len(), 2, "scan 2 is absent and omitted");
+        assert_eq!(batch[&1].mz, vec![100.0, 120.0, 150.0]);
+        assert_eq!(batch[&4].mz, vec![300.0, 320.0, 350.0]);
+
+        drop(reader);
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn read_real_diatracer_mzml() {
+        let path = Path::new(
+            "F:/data/diaPASEF/20200505_Evosep_200SPD_SG06-16_MLHeLa_200ng_py8_S3-A4_1_2740_diatracer.mzML",
+        );
+        if !path.exists() {
+            eprintln!("[skip] mzML not present: {}", path.display());
+            return;
+        }
+        let reader = MzmlReader::open(path).expect("open diaTracer mzML");
+        assert_eq!(reader.len(), 114_998, "one scan number per frame=N spectrum");
+        // MSFragger's pepXML for this file has start_scan="10090" spectrumNativeID="frame=10090".
+        let s = reader.spectrum_for_scan(10090).expect("scan 10090");
+        assert_eq!(s.ms_level, 2);
+        assert_eq!(s.mz.len(), 500);
+        assert_eq!(s.mz.len(), s.intensity.len());
     }
 
     #[test]
